@@ -45,25 +45,25 @@ bool MapInfoMod::disable() {
 void MapInfoMod::registerCommand() {
     auto& registrar = ll::command::CommandRegistrar::getInstance();
 
-    registrar.getOrCreateCommand("mapinfo", "获取手持地图的信息§r(By Puce)", CommandPermissionLevel::Any)
+    registrar.getOrCreateCommand("mapinfo", "获取手持地图的信息", CommandPermissionLevel::Any)
         .overload<ll::command::EmptyParam>()
         .execute(
             [](const ::CommandOrigin& origin, ::CommandOutput& output) {
                 auto* player = origin.getEntity();
                 if (!player || !player->isPlayer()) {
-                    output.error("该指令只能由玩家执行，你是谁？");
+                    output.error("该指令只能由玩家执行");
                     return;
                 }
 
                 const ItemStack& itemInHand = player->getCarriedItem();
                 if (itemInHand.isNull()) {
-                    output.error("请问你的手里拿着是隐形地图吗？");
+                    output.error("你的手上没有任何东西");
                     return;
                 }
                 
                 const auto& rawNameId = itemInHand.getRawNameId();
                 if (rawNameId != "filled_map" && rawNameId != "map") {
-                    output.error("请拿着一张地图！当前手持物品：§r" + rawNameId);
+                    output.error("请手持地图，当前手持物品：§r" + rawNameId);
                     return;
                 }
 
@@ -71,7 +71,7 @@ void MapInfoMod::registerCommand() {
                     output.success(
                         "§b--- 空地图信息 ---\n"
                         "§6地图 ID: §f" + std::to_string(itemInHand.getAuxValue()) + " (Potential)\n"
-                        "§7里面还没有任何数据\n"
+                        "§7此地图没有任何数据\n"
                         "§b----------------"
                     );
                     return;
@@ -96,7 +96,7 @@ void MapInfoMod::registerCommand() {
                 }
 
                 if (mapIdValue == -1) {
-                    output.error("无法从 NBT 数据中找到 uuid ，请联系 Puce 来解决此问题！");
+                    output.error("无法从 NBT 数据中找到 uuid");
                     return;
                 }
 
@@ -107,7 +107,7 @@ void MapInfoMod::registerCommand() {
                 if (!mapData) {
                     output.error(
                         "无法从存档数据中找到该地图，地图 ID ：" + std::to_string(mapIdValue) +
-                        ".\n§e如果这是新创建的地图，需要过几分钟重试。仍然遇到问题请联系 Puce 来解决。"
+                        ".\n§e如果这是新创建的地图，可能需要过几分钟重试"
                     );
                     return;
                 }
