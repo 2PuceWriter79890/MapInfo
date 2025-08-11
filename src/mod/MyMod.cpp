@@ -1,32 +1,141 @@
 #include "mod/MyMod.h"
 
 #include "ll/api/mod/RegisterHelper.h"
+#include "ll/api/command/CommandRegistrar.h"
+#include "ll/api/command/Command.h"
+#include "ll/api/command/CommandHandle.h"
 
-namespace my_mod {
+#include "mc/server/commands/CommandOrigin.h"
+#include "mc/server/commands/CommandOutput.h"
+#include "mc/world/actor/player/Player.h"
+#include "mc/world/item/ItemStack.h"
+#include "mc/world/level/Level.h"
+#include "mc/world/level/saveddata/maps/MapItemSavedData.h"
+#include "mc/world/level/BlockPos.h"
+#include "mc/nbt/CompoundTag.h"
+#include "mc/nbt/CompoundTagVariant.h"
+#include "mc/nbt/Int64Tag.h"
+#include "mc/nbt/IntTag.h"
+#include "mc/nbt/ByteTag.h"
 
-MyMod& MyMod::getInstance() {
-    static MyMod instance;
+
+namespace map_info {
+
+MapInfoMod& MapInfoMod::getInstance() {
+    static MapInfoMod instance;
     return instance;
 }
 
-bool MyMod::load() {
-    getSelf().getLogger().debug("Loading...");
-    // Code for loading the mod goes here.
+bool MapInfoMod::load() {
+    getSelf().getLogger().info("加载 MapInfoMod 中...");
     return true;
 }
 
-bool MyMod::enable() {
-    getSelf().getLogger().debug("Enabling...");
-    // Code for enabling the mod goes here.
+bool MapInfoMod::enable() {
+    getSelf().getLogger().info("启用 MapInfoMod 中...");
+    registerCommand();
     return true;
 }
 
-bool MyMod::disable() {
-    getSelf().getLogger().debug("Disabling...");
-    // Code for disabling the mod goes here.
+bool MapInfoMod::disable() {
+    getSelf().getLogger().info("禁用 MapInfoMod 中...");
     return true;
 }
 
-} // namespace my_mod
+void MapInfoMod::registerCommand() {
+    auto& registrar = ll::command::CommandRegistrar::getInstance();
 
-LL_REGISTER_MOD(my_mod::MyMod, my_mod::MyMod::getInstance());
+    registrar.getOrCreateCommand("mapinfo", "获取手持地图的信息§r(By Puce)", CommandPermissionLevel::Any)
+        .overload<ll::command::EmptyParam>()
+        .execute(
+            [](const ::CommandOrigin& origin, ::CommandOutput& output) {
+                auto* player = origin.getEntity();
+                if (!player || !player->isPlayer()) {
+                    output.error("该指令只能由玩家执行，你是谁？");
+                    return;
+                }
+
+                const ItemStack& itemInHand = player->getCarriedItem();
+                if (itemInHand.isNull()) {
+                    output.error("请问你的手里拿着是隐形地图吗？");
+                    return;
+                }
+                
+                const auto& rawNameId = itemInHand.getRawNameId();
+                if (rawNameId != "filled_map" && rawNameId != "map") {
+                    output.error("请拿着一张地图！当前手持物品：§r" + rawNameId);
+                    return;
+                }
+
+                if (rawNameId == "map") {
+                    output.success(
+                        "§b--- 空地图信息 ---\n"
+                        "§6地图 ID: §f" + std::to_string(itemInHand.getAuxValue()) + " (Potential)\n"
+                        "§7里面还没有任何数据\n"
+                        "§b----------------"
+                    );
+                    return;
+                }
+                
+                long long mapIdValue = -1;
+                bool mapIsScaling = false;
+                int mapNameIndex = -1;
+                
+                const CompoundTag* nbt = itemInHand.mUserData.get();
+
+                if (nbt && nbt->contains("map_uuid")) {
+                    mapIdValue = nbt->at("map_uuid").get<Int64Tag>().data;
+                }
+
+                if (nbt && nbt->contains("map_is_scaling")) {
+                    mapIsScaling = (nbt->at("map_is_scaling").get<ByteTag>().data != 0);
+                }
+
+                if (nbt && nbt->contains("map_name_index")) {
+                    mapNameIndex = nbt->at("map_name_index").get<IntTag>().data;
+                }
+
+                if (mapIdValue == -1) {
+                    output.error("无法从 NBT 数据中找到 uuid ，请联系 Puce 来解决此问题！");
+                    return;
+                }
+
+                ActorUniqueID mapId{mapIdValue};
+                auto& level = player->getLevel();
+                auto* mapData = level.getMapSavedData(mapId);
+
+                if (!mapData) {
+                    output.error(
+                        "无法从存档数据中找到该地图，地图 ID ：" + std::to_string(mapIdValue) +
+                        ".\n§e如果这是新创建的地图，需要过几分钟重试。仍然遇到问题请联系 Puce 来解决。"
+                    );
+                    return;
+                }
+                
+                std::string mapIdStr = std::to_string(mapIdValue);
+                std::string scaleStr = std::to_string(mapData->mScale);
+                std::string lockedStr = mapData->mLocked ? "§c是" : "§a否";
+                std::string centerPosStr = "(" + std::to_string(mapData->mOrigin->x) + ", " + std::to_string(mapData->mOrigin->z) + ")";
+                std::string scalingStr = mapIsScaling ? "§c是" : "§a否";
+                std::string nameIndexStr = (mapNameIndex != -1) ? std::to_string(mapNameIndex) : "N/A";
+
+                output.success(
+                    "§b--- 地图信息 ---\n"
+                    "§6地图 ID ： §f" + mapIdStr + "\n"
+                    "§6地图等级： §f" + scaleStr + "\n"
+                    "§6中心坐标 (X, Z)： §f" + centerPosStr + "\n"
+                    "§6是否上锁： " + lockedStr + "\n"
+                    "§6是否缩放： " + scalingStr + "\n"
+                    "§6名称索引： §f" + nameIndexStr + "\n"
+                    "§b----------------"
+                );
+            }
+        );
+
+    getSelf().getLogger().info("'/mapinfo' 命令已注册！");
+    getSelf().getLogger().info("作者：Puce");
+}
+
+} // namespace map_info
+
+LL_REGISTER_MOD(map_info::MapInfoMod, map_info::MapInfoMod::getInstance());

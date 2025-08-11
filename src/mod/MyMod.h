@@ -2,32 +2,24 @@
 
 #include "ll/api/mod/NativeMod.h"
 
-namespace my_mod {
+namespace map_info {
 
-class MyMod {
-
+class MapInfoMod {
 public:
-    static MyMod& getInstance();
-
-    MyMod() : mSelf(*ll::mod::NativeMod::current()) {}
+    static MapInfoMod& getInstance();
 
     [[nodiscard]] ll::mod::NativeMod& getSelf() const { return mSelf; }
 
-    /// @return True if the mod is loaded successfully.
     bool load();
-
-    /// @return True if the mod is enabled successfully.
     bool enable();
-
-    /// @return True if the mod is disabled successfully.
     bool disable();
 
-    // TODO: Implement this method if you need to unload the mod.
-    // /// @return True if the mod is unloaded successfully.
-    // bool unload();
-
 private:
+    MapInfoMod() : mSelf(*ll::mod::NativeMod::current()) {}
+
     ll::mod::NativeMod& mSelf;
+
+    void registerCommand();
 };
 
-} // namespace my_mod
+} // namespace map_info
