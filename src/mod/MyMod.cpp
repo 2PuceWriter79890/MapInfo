@@ -4,14 +4,13 @@
 #include "ll/api/command/CommandRegistrar.h"
 #include "ll/api/command/Command.h"
 #include "ll/api/command/CommandHandle.h"
-#include "ll/api/command/Enum.h"
 
 #include "mc/server/commands/CommandOrigin.h"
 #include "mc/server/commands/CommandOutput.h"
 #include "mc/world/actor/player/Player.h"
 #include "mc/world/item/ItemStack.h"
 #include "mc/world/level/Level.h"
-#include "mc/world/level/saveddata/maps/MapItemSavedData.h"
+#include "mc/world/level/saveddata/MapItemSavedData.h"
 #include "mc/world/level/BlockPos.h"
 #include "mc/nbt/CompoundTag.h"
 #include "mc/nbt/CompoundTagVariant.h"
@@ -19,12 +18,12 @@
 #include "mc/nbt/IntTag.h"
 #include "mc/nbt/ByteTag.h"
 
-
 namespace map_info {
 
-enum class MapInfoSubCommand {
-    snbt
+struct Command_snbt {
+    std::string subcommand;
 };
+
 
 MapInfoMod& MapInfoMod::getInstance() {
     static MapInfoMod instance;
@@ -49,8 +48,6 @@ bool MapInfoMod::disable() {
 
 void MapInfoMod::registerCommand() {
     auto& registrar = ll::command::CommandRegistrar::getInstance();
-
-    registrar.tryRegisterEnum<MapInfoSubCommand>();
 
     auto& command = registrar.getOrCreateCommand("mapinfo", "获取手持地图的信息", CommandPermissionLevel::Any);
 
@@ -103,8 +100,8 @@ void MapInfoMod::registerCommand() {
                 auto* mapData = level.getMapSavedData(mapId);
                 if (!mapData) {
                     output.error(
-                        "无法从存档数据中找到该地图，地图 ID ：" + std::to_string(mapIdValue) +
-                        ".\n§e如果这是新创建的地图，可能需要过几分钟重试"
+                        "无法从存档数据中找到该地图，地图 ID ：§r" + std::to_string(mapIdValue) +
+                        "§e如果这是新创建的地图，可能需要过几分钟重试"
                     );
                     return;
                 }
@@ -127,9 +124,14 @@ void MapInfoMod::registerCommand() {
             }
         );
 
-    command.overload<MapInfoSubCommand>()
+    command.overload<Command_snbt>()
         .execute(
-            [this](const ::CommandOrigin& origin, ::CommandOutput& output, const MapInfoSubCommand& subCmd) {
+            [this](const ::CommandOrigin& origin, ::CommandOutput& output, const Command_snbt& params) {
+                if (params.subcommand != "snbt") {
+                    output.error("未知的命令参数");
+                    return;
+                }
+
                 auto* player = origin.getEntity();
                 if (!player || !player->isPlayer()) {
                     output.error("该指令只能由玩家执行");
@@ -142,11 +144,17 @@ void MapInfoMod::registerCommand() {
                     return;
                 }
                 
+                const auto& rawNameId = itemInHand.getRawNameId();
+                if (rawNameId != "filled_map" && rawNameId != "map") {
+                    output.error("请手持一张地图来获取 SNBT 数据");
+                    return;
+                }
+                
                 if (itemInHand.mUserData) {
                     std::string snbt = itemInHand.mUserData->toString();
-                    output.success("NBT: \n" + snbt);
+                    output.success("Map SNBT Data:\n" + snbt);
                 } else {
-                    output.success("无法获取到此地图的 NBT 数据");
+                    output.success("获取 SNBT 数据失败");
                 }
             }
         );
