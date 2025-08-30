@@ -11,7 +11,7 @@
 #include "mc/world/actor/player/Player.h"
 #include "mc/world/item/ItemStack.h"
 #include "mc/world/level/Level.h"
-#include "mc/world/level/saveddata/MapItemSavedData.h"
+#include "mc/world/level/saveddata/maps/MapItemSavedData.h"
 #include "mc/world/level/BlockPos.h"
 #include "mc/nbt/CompoundTag.h"
 #include "mc/nbt/CompoundTagVariant.h"
