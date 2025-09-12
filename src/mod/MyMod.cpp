@@ -20,9 +20,20 @@
 
 namespace map_info {
 
-struct Command_snbt {
-    std::string subcommand;
+enum class SubCommand_Get {
+    get
 };
+enum class SubCommand_Snbt {
+    snbt
+};
+
+struct Command_Get {
+    SubCommand_Get subcommand;
+};
+struct Command_Snbt {
+    SubCommand_Snbt subcommand;
+};
+
 
 MapInfoMod& MapInfoMod::getInstance() {
     static MapInfoMod instance;
@@ -48,11 +59,14 @@ bool MapInfoMod::disable() {
 void MapInfoMod::registerCommand() {
     auto& registrar = ll::command::CommandRegistrar::getInstance();
 
+    registrar.tryRegisterEnum<SubCommand_Get>();
+    registrar.tryRegisterEnum<SubCommand_Snbt>();
+
     auto& command = registrar.getOrCreateCommand("mapinfo", "获取手持地图的信息", CommandPermissionLevel::Any);
 
-    command.overload<ll::command::EmptyParam>()
+    command.overload<Command_Get>()
         .execute(
-            [this](const ::CommandOrigin& origin, ::CommandOutput& output) {
+            [this](const ::CommandOrigin& origin, ::CommandOutput& output, const Command_Get& params) {
                 auto* player = origin.getEntity();
                 if (!player || !player->isPlayer()) {
                     output.error("该指令只能由玩家执行");
@@ -123,14 +137,10 @@ void MapInfoMod::registerCommand() {
             }
         );
 
-    command.overload<Command_snbt>()
-        .execute(
-            [this](const ::CommandOrigin& origin, ::CommandOutput& output, const Command_snbt& params) {
-                if (params.subcommand != "snbt") {
-                    output.error("未知的命令参数");
-                    return;
-                }
 
+    command.overload<Command_Snbt>()
+        .execute(
+            [this](const ::CommandOrigin& origin, ::CommandOutput& output, const Command_Snbt& params) {
                 auto* player = origin.getEntity();
                 if (!player || !player->isPlayer()) {
                     output.error("该指令只能由玩家执行");
@@ -145,7 +155,7 @@ void MapInfoMod::registerCommand() {
                 
                 const auto& rawNameId = itemInHand.getRawNameId();
                 if (rawNameId != "filled_map" && rawNameId != "map") {
-                    output.error("请手持一张地图来获取 SNBT 数据");
+                    output.error("请手持地图，当前手持物品：§r" + rawNameId);
                     return;
                 }
                 
