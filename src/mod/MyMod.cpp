@@ -19,6 +19,7 @@
 #include "mc/nbt/ByteTag.h"
 
 #include <optional>
+#include <functional>>
 
 namespace map_info {
 
@@ -36,7 +37,8 @@ struct Command_Snbt {
     SubCommand_Snbt subcommand;
 };
 
-std::optional<std::reference_wrapper<const ItemStack>> getHeldMap(const ::CommandOrigin& origin, ::CommandOutput& output) {
+std::optional<std::pair<Player*, std::reference_wrapper<const ItemStack>>>
+getPlayerAndHeldMap(const ::CommandOrigin& origin, ::CommandOutput& output) {
     auto* player = origin.getEntity();
     if (!player || !player->isPlayer()) {
         output.error("该指令只能由玩家执行");
@@ -52,8 +54,9 @@ std::optional<std::reference_wrapper<const ItemStack>> getHeldMap(const ::Comman
         output.error("请手持地图，当前手持物品：§r" + rawNameId);
         return std::nullopt;
     }
-    return itemInHand;
+    return std::make_pair(static_cast<Player*>(player), std::ref(itemInHand));
 }
+
 
 MapInfoMod& MapInfoMod::getInstance() {
     static MapInfoMod instance;
@@ -86,12 +89,14 @@ void MapInfoMod::registerCommand() {
 
     command.overload<Command_Get>()
         .execute(
-            [this](const ::CommandOrigin& origin, ::CommandOutput& output, const Command_Get& params) {
-                auto itemInHandOpt = getHeldMap(origin, output);
-                if (!itemInHandOpt) {
-                    return;
+            [this](const ::CommandOrigin& origin, ::CommandOutput& output, const Command_Get& params) 
+            
+                auto resultOpt = getPlayerAndHeldMap(origin, output);
+                if (!resultOpt) {
+                    return; 
                 }
-                const ItemStack& itemInHand = *itemInHandOpt;
+                auto [player, itemInHandRef] = *resultOpt;
+                const ItemStack& itemInHand = itemInHandRef;
                 
                 const auto& rawNameId = itemInHand.getRawNameId();
                 if (rawNameId == "map") {
@@ -121,6 +126,7 @@ void MapInfoMod::registerCommand() {
                     return;
                 }
                 ActorUniqueID mapId{mapIdValue};
+                // FIX: 'player' is now correctly in scope.
                 auto& level = player->getLevel();
                 auto* mapData = level.getMapSavedData(mapId);
                 if (!mapData) {
@@ -134,7 +140,7 @@ void MapInfoMod::registerCommand() {
                 std::string scaleStr = std::to_string(mapData->mScale);
                 std::string lockedStr = mapData->mLocked ? "§c是" : "§a否";
                 std::string centerPosStr = "(" + std::to_string(mapData->mOrigin->x) + ", " + std::to_string(mapData->mOrigin->z) + ")";
-                std::string scalingStr = mapIsScaling ? "§c是" : "§a否";
+                std::string scalingStr = mapIsScaling ? "§a是" : "§c否";
                 std::string nameIndexStr = (mapNameIndex != -1) ? std::to_string(mapNameIndex) : "N/A";
                 output.success(
                     "§b--- 地图信息 ---\n"
@@ -149,14 +155,17 @@ void MapInfoMod::registerCommand() {
             }
         );
 
+    // --- Overload 2: /mapinfo snbt ---
     command.overload<Command_Snbt>()
         .execute(
             [this](const ::CommandOrigin& origin, ::CommandOutput& output, const Command_Snbt& params) {
-                auto itemInHandOpt = getHeldMap(origin, output);
-                if (!itemInHandOpt) {
+                // FIX: Use the same updated helper here for consistency.
+                auto resultOpt = getPlayerAndHeldMap(origin, output);
+                if (!resultOpt) {
                     return;
                 }
-                const ItemStack& itemInHand = *itemInHandOpt;
+                auto [player, itemInHandRef] = *resultOpt;
+                const ItemStack& itemInHand = itemInHandRef;
                 
                 if (itemInHand.mUserData) {
                     std::string snbt = itemInHand.mUserData->toString();
