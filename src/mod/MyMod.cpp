@@ -19,31 +19,32 @@
 #include "mc/nbt/ByteTag.h"
 
 #include <optional>
-#include <functional>>
+#include <functional>
 
 namespace map_info {
 
-enum class SubCommand_Get {
-    get
-};
-enum class SubCommand_Snbt {
+
+enum class SubCommand {
+    get,
     snbt
 };
 
-struct Command_Get {
-    SubCommand_Get subcommand;
+
+struct Command_Param {
+    SubCommand subcommand;
 };
-struct Command_Snbt {
-    SubCommand_Snbt subcommand;
-};
+
+
 
 std::optional<std::pair<Player*, std::reference_wrapper<const ItemStack>>>
 getPlayerAndHeldMap(const ::CommandOrigin& origin, ::CommandOutput& output) {
-    auto* player = origin.getEntity();
-    if (!player || !player->isPlayer()) {
+    auto* entity = origin.getEntity();
+    if (!entity || !entity->isPlayer()) {
         output.error("该指令只能由玩家执行");
         return std::nullopt;
     }
+    auto* player = static_cast<Player*>(entity);
+
     const ItemStack& itemInHand = player->getCarriedItem();
     if (itemInHand.isNull()) {
         output.error("你的手上没有任何东西");
@@ -54,7 +55,7 @@ getPlayerAndHeldMap(const ::CommandOrigin& origin, ::CommandOutput& output) {
         output.error("请手持地图，当前手持物品：§r" + rawNameId);
         return std::nullopt;
     }
-    return std::make_pair(static_cast<Player*>(player), std::ref(itemInHand));
+    return std::make_pair(player, std::ref(itemInHand));
 }
 
 
@@ -82,100 +83,92 @@ bool MapInfoMod::disable() {
 void MapInfoMod::registerCommand() {
     auto& registrar = ll::command::CommandRegistrar::getInstance();
 
-    registrar.tryRegisterEnum<SubCommand_Get>();
-    registrar.tryRegisterEnum<SubCommand_Snbt>();
+
+    registrar.tryRegisterEnum<SubCommand>();
 
     auto& command = registrar.getOrCreateCommand("mapinfo", "获取手持地图的信息", CommandPermissionLevel::Any);
 
-    command.overload<Command_Get>()
-        .execute(
-            [this](const ::CommandOrigin& origin, ::CommandOutput& output, const Command_Get& params) 
-            
-                auto resultOpt = getPlayerAndHeldMap(origin, output);
-                if (!resultOpt) {
-                    return; 
-                }
-                auto [player, itemInHandRef] = *resultOpt;
-                const ItemStack& itemInHand = itemInHandRef;
-                
-                const auto& rawNameId = itemInHand.getRawNameId();
-                if (rawNameId == "map") {
-                    output.success(
-                        "§b--- 空地图信息 ---\n"
-                        "§6地图 ID: §f" + std::to_string(itemInHand.getAuxValue()) + " (Potential)\n"
-                        "§7此地图没有任何数据\n"
-                        "§b----------------"
-                    );
-                    return;
-                }
-                long long mapIdValue = -1;
-                bool mapIsScaling = false;
-                int mapNameIndex = -1;
-                const CompoundTag* nbt = itemInHand.mUserData.get();
-                if (nbt && nbt->contains("map_uuid")) {
-                    mapIdValue = nbt->at("map_uuid").get<Int64Tag>().data;
-                }
-                if (nbt && nbt->contains("map_is_scaling")) {
-                    mapIsScaling = (nbt->at("map_is_scaling").get<ByteTag>().data != 0);
-                }
-                if (nbt && nbt->contains("map_name_index")) {
-                    mapNameIndex = nbt->at("map_name_index").get<IntTag>().data;
-                }
-                if (mapIdValue == -1) {
-                    output.error("无法从 NBT 数据中找到 uuid");
-                    return;
-                }
-                ActorUniqueID mapId{mapIdValue};
-                // FIX: 'player' is now correctly in scope.
-                auto& level = player->getLevel();
-                auto* mapData = level.getMapSavedData(mapId);
-                if (!mapData) {
-                    output.error(
-                        "无法从存档数据中找到该地图，地图 ID ：§r" + std::to_string(mapIdValue) +
-                        "\n§e如果这是新创建的地图，可能需要过几分钟重试"
-                    );
-                    return;
-                }
-                std::string mapIdStr = std::to_string(mapIdValue);
-                std::string scaleStr = std::to_string(mapData->mScale);
-                std::string lockedStr = mapData->mLocked ? "§c是" : "§a否";
-                std::string centerPosStr = "(" + std::to_string(mapData->mOrigin->x) + ", " + std::to_string(mapData->mOrigin->z) + ")";
-                std::string scalingStr = mapIsScaling ? "§a是" : "§c否";
-                std::string nameIndexStr = (mapNameIndex != -1) ? std::to_string(mapNameIndex) : "N/A";
-                output.success(
-                    "§b--- 地图信息 ---\n"
-                    "§6地图 ID ： §f" + mapIdStr + "\n"
-                    "§6地图等级： §f" + scaleStr + "\n"
-                    "§6中心坐标 (X,Z)： §f" + centerPosStr + "\n"
-                    "§6是否上锁： " + lockedStr + "\n"
-                    "§6是否缩放： " + scalingStr + "\n"
-                    "§6名称索引： §f" + nameIndexStr + "\n"
-                    "§b----------------"
-                );
-            }
-        );
 
-    // --- Overload 2: /mapinfo snbt ---
-    command.overload<Command_Snbt>()
+    command.overload<Command_Param>()
         .execute(
-            [this](const ::CommandOrigin& origin, ::CommandOutput& output, const Command_Snbt& params) {
-                // FIX: Use the same updated helper here for consistency.
+            [this](const ::CommandOrigin& origin, ::CommandOutput& output, const Command_Param& params) {
                 auto resultOpt = getPlayerAndHeldMap(origin, output);
                 if (!resultOpt) {
                     return;
                 }
                 auto [player, itemInHandRef] = *resultOpt;
                 const ItemStack& itemInHand = itemInHandRef;
-                
-                if (itemInHand.mUserData) {
-                    std::string snbt = itemInHand.mUserData->toString();
-                    if (!snbt.empty() && snbt != "{}") {
-                         output.success("§a地图 SNBT 数据:\n§r" + snbt);
-                    } else {
-                         output.success("该地图没有 (或空的) SNBT 数据");
+
+                switch (params.subcommand) {
+                    case SubCommand::get: {
+                        const auto& rawNameId = itemInHand.getRawNameId();
+                        if (rawNameId == "map") {
+                            output.success(
+                                "§b--- 空地图信息 ---\n"
+                                "§6地图 ID: §f" + std::to_string(itemInHand.getAuxValue()) + " (Potential)\n"
+                                "§7此地图没有任何数据\n"
+                                "§b----------------"
+                            );
+                            return;
+                        }
+                        long long mapIdValue = -1;
+                        bool mapIsScaling = false;
+                        int mapNameIndex = -1;
+                        const CompoundTag* nbt = itemInHand.mUserData.get();
+                        if (nbt && nbt->contains("map_uuid")) {
+                            mapIdValue = nbt->at("map_uuid").get<Int64Tag>().data;
+                        }
+                        if (nbt && nbt->contains("map_is_scaling")) {
+                            mapIsScaling = (nbt->at("map_is_scaling").get<ByteTag>().data != 0);
+                        }
+                        if (nbt && nbt->contains("map_name_index")) {
+                            mapNameIndex = nbt->at("map_name_index").get<IntTag>().data;
+                        }
+                        if (mapIdValue == -1) {
+                            output.error("无法从 NBT 数据中找到 uuid");
+                            return;
+                        }
+                        ActorUniqueID mapId{mapIdValue};
+                        auto& level = player->getLevel();
+                        auto* mapData = level.getMapSavedData(mapId);
+                        if (!mapData) {
+                            output.error(
+                                "无法从存档数据中找到该地图，地图 ID ：§r" + std::to_string(mapIdValue) +
+                                "\n§e如果这是新创建的地图，可能需要过几分钟重试"
+                            );
+                            return;
+                        }
+                        std::string mapIdStr = std::to_string(mapIdValue);
+                        std::string scaleStr = std::to_string(mapData->mScale);
+                        std::string lockedStr = mapData->mLocked ? "§c是" : "§a否";
+                        std::string centerPosStr = "(" + std::to_string(mapData->mOrigin->x) + ", " + std::to_string(mapData->mOrigin->z) + ")";
+                        std::string scalingStr = mapIsScaling ? "§c是" : "§a否";
+                        std::string nameIndexStr = (mapNameIndex != -1) ? std::to_string(mapNameIndex) : "N/A";
+                        output.success(
+                            "§b--- 地图信息 ---\n"
+                            "§6地图 ID ： §f" + mapIdStr + "\n"
+                            "§6地图等级： §f" + scaleStr + "\n"
+                            "§6中心坐标 (X,Z)： §f" + centerPosStr + "\n"
+                            "§6是否上锁： " + lockedStr + "\n"
+                            "§6是否缩放： " + scalingStr + "\n"
+                            "§6名称索引： §f" + nameIndexStr + "\n"
+                            "§b----------------"
+                        );
+                        break;
                     }
-                } else {
-                    output.success("该地图没有 SNBT 数据");
+                    case SubCommand::snbt: {
+                        if (itemInHand.mUserData) {
+                            std::string snbt = itemInHand.mUserData->toString();
+                            if (!snbt.empty() && snbt != "{}") {
+                                output.success("§a地图 SNBT 数据:\n§r" + snbt);
+                            } else {
+                                output.success("该地图没有 (或空的) SNBT 数据");
+                            }
+                        } else {
+                            output.success("该地图没有 SNBT 数据");
+                        }
+                        break;
+                    }
                 }
             }
         );
