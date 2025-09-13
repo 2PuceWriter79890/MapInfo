@@ -18,6 +18,8 @@
 #include "mc/nbt/IntTag.h"
 #include "mc/nbt/ByteTag.h"
 
+#include <optional>
+
 namespace map_info {
 
 enum class SubCommand_Get {
@@ -34,6 +36,24 @@ struct Command_Snbt {
     SubCommand_Snbt subcommand;
 };
 
+std::optional<std::reference_wrapper<const ItemStack>> getHeldMap(const ::CommandOrigin& origin, ::CommandOutput& output) {
+    auto* player = origin.getEntity();
+    if (!player || !player->isPlayer()) {
+        output.error("该指令只能由玩家执行");
+        return std::nullopt;
+    }
+    const ItemStack& itemInHand = player->getCarriedItem();
+    if (itemInHand.isNull()) {
+        output.error("你的手上没有任何东西");
+        return std::nullopt;
+    }
+    const auto& rawNameId = itemInHand.getRawNameId();
+    if (rawNameId != "filled_map" && rawNameId != "map") {
+        output.error("请手持地图，当前手持物品：§r" + rawNameId);
+        return std::nullopt;
+    }
+    return itemInHand;
+}
 
 MapInfoMod& MapInfoMod::getInstance() {
     static MapInfoMod instance;
@@ -67,21 +87,13 @@ void MapInfoMod::registerCommand() {
     command.overload<Command_Get>()
         .execute(
             [this](const ::CommandOrigin& origin, ::CommandOutput& output, const Command_Get& params) {
-                auto* player = origin.getEntity();
-                if (!player || !player->isPlayer()) {
-                    output.error("该指令只能由玩家执行");
+                auto itemInHandOpt = getHeldMap(origin, output);
+                if (!itemInHandOpt) {
                     return;
                 }
-                const ItemStack& itemInHand = player->getCarriedItem();
-                if (itemInHand.isNull()) {
-                    output.error("你的手上没有任何东西");
-                    return;
-                }
+                const ItemStack& itemInHand = *itemInHandOpt;
+                
                 const auto& rawNameId = itemInHand.getRawNameId();
-                if (rawNameId != "filled_map" && rawNameId != "map") {
-                    output.error("请手持地图，当前手持物品：§r" + rawNameId);
-                    return;
-                }
                 if (rawNameId == "map") {
                     output.success(
                         "§b--- 空地图信息 ---\n"
@@ -114,7 +126,7 @@ void MapInfoMod::registerCommand() {
                 if (!mapData) {
                     output.error(
                         "无法从存档数据中找到该地图，地图 ID ：§r" + std::to_string(mapIdValue) +
-                        "§e如果这是新创建的地图，可能需要过几分钟重试"
+                        "\n§e如果这是新创建的地图，可能需要过几分钟重试"
                     );
                     return;
                 }
@@ -128,7 +140,7 @@ void MapInfoMod::registerCommand() {
                     "§b--- 地图信息 ---\n"
                     "§6地图 ID ： §f" + mapIdStr + "\n"
                     "§6地图等级： §f" + scaleStr + "\n"
-                    "§6中心坐标 (X, Z)： §f" + centerPosStr + "\n"
+                    "§6中心坐标 (X,Z)： §f" + centerPosStr + "\n"
                     "§6是否上锁： " + lockedStr + "\n"
                     "§6是否缩放： " + scalingStr + "\n"
                     "§6名称索引： §f" + nameIndexStr + "\n"
@@ -137,33 +149,24 @@ void MapInfoMod::registerCommand() {
             }
         );
 
-
     command.overload<Command_Snbt>()
         .execute(
             [this](const ::CommandOrigin& origin, ::CommandOutput& output, const Command_Snbt& params) {
-                auto* player = origin.getEntity();
-                if (!player || !player->isPlayer()) {
-                    output.error("该指令只能由玩家执行");
+                auto itemInHandOpt = getHeldMap(origin, output);
+                if (!itemInHandOpt) {
                     return;
                 }
-
-                const ItemStack& itemInHand = player->getCarriedItem();
-                if (itemInHand.isNull()) {
-                    output.error("你的手上没有任何东西");
-                    return;
-                }
-                
-                const auto& rawNameId = itemInHand.getRawNameId();
-                if (rawNameId != "filled_map" && rawNameId != "map") {
-                    output.error("请手持地图，当前手持物品：§r" + rawNameId);
-                    return;
-                }
+                const ItemStack& itemInHand = *itemInHandOpt;
                 
                 if (itemInHand.mUserData) {
                     std::string snbt = itemInHand.mUserData->toString();
-                    output.success("Map SNBT Data:\n" + snbt);
+                    if (!snbt.empty() && snbt != "{}") {
+                         output.success("§a地图 SNBT 数据:\n§r" + snbt);
+                    } else {
+                         output.success("该地图没有 (或空的) SNBT 数据");
+                    }
                 } else {
-                    output.success("获取 SNBT 数据失败");
+                    output.success("该地图没有 SNBT 数据");
                 }
             }
         );
